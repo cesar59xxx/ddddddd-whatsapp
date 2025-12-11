@@ -6,20 +6,13 @@ import { createClient } from "@/lib/supabase/client"
 import { ChatbotEditor } from "@/components/chatbot-editor"
 import { Loader2 } from "lucide-react"
 
-export default function ChatbotDetailPageClient({ params }: { params: Promise<{ id: string }> }) {
+export default function ChatbotDetailPageClient({ id }: { id: string }) {
   const [chatbot, setChatbot] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [chatbotId, setChatbotId] = useState<string | null>(null)
   const router = useRouter()
   const supabase = createClient()
 
   useEffect(() => {
-    params.then((p) => setChatbotId(p.id))
-  }, [params])
-
-  useEffect(() => {
-    if (!chatbotId) return
-
     async function loadChatbot() {
       const {
         data: { user },
@@ -39,7 +32,7 @@ export default function ChatbotDetailPageClient({ params }: { params: Promise<{ 
           whatsapp_instances!inner(id, name, user_id)
         `,
         )
-        .eq("id", chatbotId)
+        .eq("id", id)
         .eq("whatsapp_instances.user_id", user.id)
         .single()
 
@@ -53,7 +46,7 @@ export default function ChatbotDetailPageClient({ params }: { params: Promise<{ 
     }
 
     loadChatbot()
-  }, [chatbotId, router, supabase])
+  }, [id, router, supabase])
 
   if (loading) {
     return (
