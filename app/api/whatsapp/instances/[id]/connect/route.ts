@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
-import { whatsappWebService } from "@/lib/services/whatsapp-web"
 import { NextResponse } from "next/server"
+import { BACKEND_CONFIG } from "@/lib/config/backend"
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -16,7 +16,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Verify instance belongs to user
     const { data: instance, error: instanceError } = await supabase
       .from("whatsapp_instances")
       .select("*")
@@ -28,23 +27,42 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Instance not found" }, { status: 404 })
     }
 
-    await whatsappWebService.initializeInstance(id)
+    const backendUrl = `${BACKEND_CONFIG.baseUrl}${BACKEND_CONFIG.endpoints.whatsapp.connect(id)}`
 
-    // Update instance status
-    const { error: updateError } = await supabase
+    console.log("[v0] Calling Railway backend:", backendUrl)
+
+    const backendResponse = await fetch(backendUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        instanceId: id,
+        userId: user.id,
+      }),
+    })
+
+    if (!backendResponse.ok) {
+      const errorData = await backendResponse.json()
+      throw new Error(errorData.error || "Backend error")
+    }
+
+    const data = await backendResponse.json()
+
+    await supabase
       .from("whatsapp_instances")
       .update({
         status: "connecting",
+        updated_at: new Date().toISOString(),
       })
       .eq("id", id)
 
-    if (updateError) {
-      return NextResponse.json({ error: updateError.message }, { status: 500 })
-    }
-
-    return NextResponse.json({ success: true, message: "WhatsApp connection initiated" })
+    return NextResponse.json(data)
   } catch (error) {
-    console.error("[WhatsApp] Error connecting instance:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("[v0] Error connecting instance:", error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Internal server error" },
+      { status: 500 },
+    )
   }
 }

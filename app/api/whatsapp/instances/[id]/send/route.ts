@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
-import { whatsappWebService } from "@/lib/services/whatsapp-web"
 import { NextResponse } from "next/server"
+import { BACKEND_CONFIG } from "@/lib/config/backend"
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -16,7 +16,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Verify instance belongs to user
     const { data: instance, error: instanceError } = await supabase
       .from("whatsapp_instances")
       .select("*")
@@ -35,23 +34,37 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    // Send message via whatsapp-web.js
-    if (mediaUrl) {
-      await whatsappWebService.sendMediaMessage(id, to, mediaUrl, caption)
-    } else {
-      await whatsappWebService.sendMessage(id, to, message)
+    const backendUrl = `${BACKEND_CONFIG.baseUrl}${BACKEND_CONFIG.endpoints.whatsapp.send(id)}`
+
+    console.log("[v0] Sending message via Railway:", backendUrl)
+
+    const backendResponse = await fetch(backendUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ to, message, mediaUrl, caption }),
+    })
+
+    if (!backendResponse.ok) {
+      const errorData = await backendResponse.json()
+      throw new Error(errorData.error || "Failed to send message")
     }
 
-    // Log analytics event
+    const result = await backendResponse.json()
+
     await supabase.from("analytics_events").insert({
       instance_id: id,
       event_type: "message_sent",
       event_data: { to, hasMedia: !!mediaUrl },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, messageId: result.messageId })
   } catch (error) {
-    console.error("[WhatsApp] Error sending message:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("[v0] Error sending message:", error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Internal server error" },
+      { status: 500 },
+    )
   }
 }

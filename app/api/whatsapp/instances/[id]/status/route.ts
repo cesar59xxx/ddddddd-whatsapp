@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
-import { whatsappWebService } from "@/lib/services/whatsapp-web"
 import { NextResponse } from "next/server"
+import { BACKEND_CONFIG } from "@/lib/config/backend"
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -16,7 +16,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Verify instance belongs to user
     const { data: instance, error: instanceError } = await supabase
       .from("whatsapp_instances")
       .select("*")
@@ -28,27 +27,46 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "Instance not found" }, { status: 404 })
     }
 
-    const status = await whatsappWebService.getInstanceStatus(id)
+    const backendUrl = `${BACKEND_CONFIG.baseUrl}${BACKEND_CONFIG.endpoints.whatsapp.status(id)}`
 
-    // Update database if status changed
-    if (status && status.status !== instance.status) {
+    console.log("[v0] Fetching status from Railway:", backendUrl)
+
+    const backendResponse = await fetch(backendUrl, {
+      headers: {
+        "Content-Type": "application/json",
+      },
+    })
+
+    if (!backendResponse.ok) {
+      console.error("[v0] Backend error:", await backendResponse.text())
+      return NextResponse.json({
+        status: instance.status,
+        phoneNumber: instance.phone_number,
+        qrCode: instance.qr_code,
+      })
+    }
+
+    const data = await backendResponse.json()
+
+    if (data.status !== instance.status) {
       await supabase
         .from("whatsapp_instances")
         .update({
-          status: status.status,
-          phone_number: status.phoneNumber,
-          qr_code: status.qrCode || null,
+          status: data.status,
+          phone_number: data.phoneNumber,
+          qr_code: data.qrCode || null,
+          updated_at: new Date().toISOString(),
         })
         .eq("id", id)
     }
 
     return NextResponse.json({
-      status: status?.status || instance.status,
-      phoneNumber: status?.phoneNumber || instance.phone_number,
-      qrCode: status?.qrCode || instance.qr_code,
+      status: data.status || instance.status,
+      phoneNumber: data.phoneNumber || instance.phone_number,
+      qrCode: data.qrCode || instance.qr_code,
     })
   } catch (error) {
-    console.error("[WhatsApp] Error fetching status:", error)
+    console.error("[v0] Error fetching status:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

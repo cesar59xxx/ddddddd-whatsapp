@@ -1,17 +1,20 @@
 import { Client, LocalAuth } from "whatsapp-web.js"
 import { createClient } from "@supabase/supabase-js"
+import { ChatbotEngine } from "./chatbot-engine"
 
 interface ClientData {
   client: Client
   qrCode: string | null
-  status: "initializing" | "qr" | "ready" | "disconnected"
+  status: "initializing" | "qr_code" | "connected" | "disconnected"
   userId: string
+  phoneNumber: string | null
 }
 
 export class WhatsAppManager {
   private static instance: WhatsAppManager
   private clients: Map<string, ClientData> = new Map()
   private supabase
+  private chatbotEngine: ChatbotEngine
 
   private constructor() {
     this.supabase = createClient(
@@ -19,6 +22,7 @@ export class WhatsAppManager {
       process.env.SUPABASE_SERVICE_ROLE_KEY ||
         "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvamR1cXNteGlwb2F5ZWN1dnNpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTQ3ODg2NSwiZXhwIjoyMDgxMDU0ODY1fQ.dEgoQAHl78BbrMRucng075-kx4b7ErWWIhh-WySX8ig",
     )
+    this.chatbotEngine = new ChatbotEngine()
   }
 
   public static getInstance(): WhatsAppManager {
@@ -30,14 +34,16 @@ export class WhatsAppManager {
 
   async initializeClient(instanceId: string, userId: string): Promise<void> {
     if (this.clients.has(instanceId)) {
-      console.log(`Cliente ${instanceId} já existe`)
+      console.log(`[WhatsApp Manager] Cliente ${instanceId} já existe`)
       return
     }
+
+    console.log(`[WhatsApp Manager] Inicializando cliente ${instanceId}`)
 
     const client = new Client({
       authStrategy: new LocalAuth({ clientId: instanceId }),
       puppeteer: {
-        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
       },
     })
 
@@ -46,57 +52,86 @@ export class WhatsAppManager {
       qrCode: null,
       status: "initializing",
       userId,
+      phoneNumber: null,
     }
 
     this.clients.set(instanceId, clientData)
 
-    // QR Code recebido
     client.on("qr", async (qr) => {
-      console.log(`QR Code gerado para ${instanceId}`)
+      console.log(`[WhatsApp Manager] QR Code gerado para ${instanceId}`)
       clientData.qrCode = qr
-      clientData.status = "qr"
+      clientData.status = "qr_code"
 
-      await this.supabase.from("whatsapp_instances").update({ status: "qr_code" }).eq("id", instanceId)
+      await this.supabase
+        .from("whatsapp_instances")
+        .update({
+          status: "qr_code",
+          qr_code: qr,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", instanceId)
     })
 
-    // Cliente pronto
     client.on("ready", async () => {
-      console.log(`Cliente ${instanceId} conectado!`)
-      clientData.status = "ready"
+      console.log(`[WhatsApp Manager] Cliente ${instanceId} conectado!`)
+      clientData.status = "connected"
       clientData.qrCode = null
+
+      const info = await client.info
+      clientData.phoneNumber = info.wid.user
 
       await this.supabase
         .from("whatsapp_instances")
         .update({
           status: "connected",
+          phone_number: info.wid.user,
+          qr_code: null,
           connected_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         })
         .eq("id", instanceId)
     })
 
-    // Mensagem recebida
     client.on("message", async (msg) => {
-      console.log(`Mensagem recebida em ${instanceId}: ${msg.body}`)
+      console.log(`[WhatsApp Manager] Mensagem recebida em ${instanceId}: ${msg.body}`)
 
-      // Salvar no banco
       await this.supabase.from("messages").insert({
         instance_id: instanceId,
         from_number: msg.from,
-        message_type: "text",
+        message_type: msg.type,
         content: msg.body,
         direction: "incoming",
         timestamp: new Date(msg.timestamp * 1000).toISOString(),
       })
 
-      // TODO: Processar com chatbot
+      const response = await this.chatbotEngine.processMessage(instanceId, msg.from, msg.body)
+
+      if (response) {
+        console.log(`[WhatsApp Manager] Enviando resposta automática: ${response}`)
+        await client.sendMessage(msg.from, response)
+
+        await this.supabase.from("messages").insert({
+          instance_id: instanceId,
+          to_number: msg.from,
+          message_type: "text",
+          content: response,
+          direction: "outgoing",
+          timestamp: new Date().toISOString(),
+        })
+      }
     })
 
-    // Desconectado
     client.on("disconnected", async (reason) => {
-      console.log(`Cliente ${instanceId} desconectado: ${reason}`)
+      console.log(`[WhatsApp Manager] Cliente ${instanceId} desconectado: ${reason}`)
       clientData.status = "disconnected"
 
-      await this.supabase.from("whatsapp_instances").update({ status: "disconnected" }).eq("id", instanceId)
+      await this.supabase
+        .from("whatsapp_instances")
+        .update({
+          status: "disconnected",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", instanceId)
 
       this.clients.delete(instanceId)
     })
@@ -109,21 +144,30 @@ export class WhatsAppManager {
     return clientData?.qrCode || null
   }
 
-  getStatus(instanceId: string): string {
+  getStatus(instanceId: string): { status: string; phoneNumber?: string; qrCode?: string } {
     const clientData = this.clients.get(instanceId)
-    return clientData?.status || "disconnected"
+    if (!clientData) {
+      return { status: "disconnected" }
+    }
+
+    return {
+      status: clientData.status,
+      phoneNumber: clientData.phoneNumber || undefined,
+      qrCode: clientData.qrCode || undefined,
+    }
   }
 
   async sendMessage(instanceId: string, to: string, message: string): Promise<string> {
     const clientData = this.clients.get(instanceId)
 
-    if (!clientData || clientData.status !== "ready") {
+    if (!clientData || clientData.status !== "connected") {
       throw new Error("Cliente não conectado")
     }
 
+    console.log(`[WhatsApp Manager] Enviando mensagem de ${instanceId} para ${to}`)
+
     const result = await clientData.client.sendMessage(to, message)
 
-    // Salvar no banco
     await this.supabase.from("messages").insert({
       instance_id: instanceId,
       to_number: to,
@@ -140,6 +184,7 @@ export class WhatsAppManager {
     const clientData = this.clients.get(instanceId)
 
     if (clientData) {
+      console.log(`[WhatsApp Manager] Desconectando cliente ${instanceId}`)
       await clientData.client.destroy()
       this.clients.delete(instanceId)
     }

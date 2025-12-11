@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
-import { whatsappWebService } from "@/lib/services/whatsapp-web"
 import { NextResponse } from "next/server"
+import { BACKEND_CONFIG } from "@/lib/config/backend"
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -16,7 +16,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Verify instance belongs to user
     const { data: instance, error: instanceError } = await supabase
       .from("whatsapp_instances")
       .select("*")
@@ -28,16 +27,28 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Instance not found" }, { status: 404 })
     }
 
-    // Disconnect WhatsApp instance
-    await whatsappWebService.disconnectInstance(id)
+    const backendUrl = `${BACKEND_CONFIG.baseUrl}${BACKEND_CONFIG.endpoints.whatsapp.disconnect(id)}`
 
-    // Update instance status
+    console.log("[v0] Calling Railway to disconnect:", backendUrl)
+
+    const backendResponse = await fetch(backendUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    })
+
+    if (!backendResponse.ok) {
+      throw new Error("Backend disconnect failed")
+    }
+
     const { error: updateError } = await supabase
       .from("whatsapp_instances")
       .update({
         status: "disconnected",
         phone_number: null,
         qr_code: null,
+        updated_at: new Date().toISOString(),
       })
       .eq("id", id)
 
@@ -47,7 +58,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("[WhatsApp] Error disconnecting instance:", error)
+    console.error("[v0] Error disconnecting instance:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
