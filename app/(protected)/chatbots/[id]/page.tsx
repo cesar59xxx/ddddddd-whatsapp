@@ -1,44 +1,62 @@
-import { redirect } from "next/navigation"
-import { createClient } from "@/lib/supabase/server"
+"use client"
+
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
 import { ChatbotEditor } from "@/components/chatbot-editor"
-import { notFound } from "next/navigation"
+import { Loader2 } from "lucide-react"
 
-export const dynamic = "force-dynamic"
-export const dynamicParams = true
-export const revalidate = 0
+export default function ChatbotDetailPage({ params }: { params: { id: string } }) {
+  const [chatbot, setChatbot] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const router = useRouter()
+  const supabase = createClient()
 
-export async function generateStaticParams() {
-  return []
-}
+  useEffect(() => {
+    async function loadChatbot() {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser()
 
-export default async function ChatbotDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
-  const supabase = await createClient()
+      if (authError || !user) {
+        router.push("/auth/login")
+        return
+      }
 
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser()
+      const { data, error } = await supabase
+        .from("chatbot_configs")
+        .select(
+          `
+          *,
+          whatsapp_instances!inner(id, name, user_id)
+        `,
+        )
+        .eq("id", params.id)
+        .eq("whatsapp_instances.user_id", user.id)
+        .single()
 
-  if (error || !user) {
-    redirect("/auth/login")
-  }
+      if (error || !data) {
+        router.push("/chatbots")
+        return
+      }
 
-  const { data: chatbot } = await supabase
-    .from("chatbot_configs")
-    .select(
-      `
-      *,
-      whatsapp_instances!inner(id, name, user_id)
-    `,
+      setChatbot(data)
+      setLoading(false)
+    }
+
+    loadChatbot()
+  }, [params.id, router, supabase])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
     )
-    .eq("id", id)
-    .eq("whatsapp_instances.user_id", user.id)
-    .single()
-
-  if (!chatbot) {
-    notFound()
   }
+
+  if (!chatbot) return null
 
   return (
     <div className="flex flex-col gap-6">

@@ -1,57 +1,75 @@
-import { redirect } from "next/navigation"
-import { createClient } from "@/lib/supabase/server"
+"use client"
+
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
 import { LeadDetails } from "@/components/lead-details"
-import { notFound } from "next/navigation"
+import { Loader2 } from "lucide-react"
 
-export const dynamic = "force-dynamic"
-export const dynamicParams = true
-export const revalidate = 0
+export default function LeadDetailPage({ params }: { params: { id: string } }) {
+  const [lead, setLead] = useState<any>(null)
+  const [conversations, setConversations] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const router = useRouter()
+  const supabase = createClient()
 
-export async function generateStaticParams() {
-  return []
-}
+  useEffect(() => {
+    async function loadLead() {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser()
 
-export default async function LeadDetailPage({ params }: { params: { id: string } }) {
-  const { id } = params
-  const supabase = await createClient()
+      if (authError || !user) {
+        router.push("/auth/login")
+        return
+      }
 
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser()
+      const { data: leadData, error: leadError } = await supabase
+        .from("leads")
+        .select(
+          `
+          *,
+          whatsapp_instances!inner(id, name, user_id)
+        `,
+        )
+        .eq("id", params.id)
+        .eq("whatsapp_instances.user_id", user.id)
+        .single()
 
-  if (error || !user) {
-    redirect("/auth/login")
+      if (leadError || !leadData) {
+        router.push("/leads")
+        return
+      }
+
+      const { data: conversationsData } = await supabase
+        .from("conversations")
+        .select(
+          `
+          *,
+          messages(*)
+        `,
+        )
+        .eq("lead_id", params.id)
+        .order("created_at", { ascending: false })
+
+      setLead(leadData)
+      setConversations(conversationsData || [])
+      setLoading(false)
+    }
+
+    loadLead()
+  }, [params.id, router, supabase])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
   }
 
-  // Get lead with instance info
-  const { data: lead } = await supabase
-    .from("leads")
-    .select(
-      `
-      *,
-      whatsapp_instances!inner(id, name, user_id)
-    `,
-    )
-    .eq("id", id)
-    .eq("whatsapp_instances.user_id", user.id)
-    .single()
-
-  if (!lead) {
-    notFound()
-  }
-
-  // Get conversations for this lead
-  const { data: conversations } = await supabase
-    .from("conversations")
-    .select(
-      `
-      *,
-      messages(*)
-    `,
-    )
-    .eq("lead_id", id)
-    .order("created_at", { ascending: false })
+  if (!lead) return null
 
   return (
     <div className="flex flex-col gap-6">
@@ -60,7 +78,7 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
         <p className="text-muted-foreground">Detalhes do lead</p>
       </div>
 
-      <LeadDetails lead={lead} conversations={conversations || []} />
+      <LeadDetails lead={lead} conversations={conversations} />
     </div>
   )
 }

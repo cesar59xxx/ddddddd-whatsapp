@@ -1,39 +1,57 @@
-import { redirect } from "next/navigation"
-import { createClient } from "@/lib/supabase/server"
+"use client"
+
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
 import { InstanceDetails } from "@/components/instance-details"
-import { notFound } from "next/navigation"
+import { Loader2 } from "lucide-react"
 
-export const dynamic = "force-dynamic"
-export const dynamicParams = true
-export const revalidate = 0
+export default function InstanceDetailPage({ params }: { params: { id: string } }) {
+  const [instance, setInstance] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const router = useRouter()
+  const supabase = createClient()
 
-export async function generateStaticParams() {
-  return []
-}
+  useEffect(() => {
+    async function loadInstance() {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser()
 
-export default async function InstanceDetailPage({ params }: { params: { id: string } }) {
-  const { id } = params
-  const supabase = await createClient()
+      if (authError || !user) {
+        router.push("/auth/login")
+        return
+      }
 
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser()
+      const { data, error } = await supabase
+        .from("whatsapp_instances")
+        .select("*")
+        .eq("id", params.id)
+        .eq("user_id", user.id)
+        .single()
 
-  if (error || !user) {
-    redirect("/auth/login")
+      if (error || !data) {
+        router.push("/instances")
+        return
+      }
+
+      setInstance(data)
+      setLoading(false)
+    }
+
+    loadInstance()
+  }, [params.id, router, supabase])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
   }
 
-  const { data: instance } = await supabase
-    .from("whatsapp_instances")
-    .select("*")
-    .eq("id", id)
-    .eq("user_id", user.id)
-    .single()
-
-  if (!instance) {
-    notFound()
-  }
+  if (!instance) return null
 
   return (
     <div className="flex flex-col gap-6">
