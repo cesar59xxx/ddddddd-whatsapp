@@ -4,6 +4,7 @@ import { ChatbotEditor } from "@/components/chatbot-editor"
 import { notFound } from "next/navigation"
 
 export const dynamic = "force-dynamic"
+export const dynamicParams = true
 
 export default async function ChatbotDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params

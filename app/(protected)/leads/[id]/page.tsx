@@ -4,9 +4,10 @@ import { LeadDetails } from "@/components/lead-details"
 import { notFound } from "next/navigation"
 
 export const dynamic = "force-dynamic"
+export const dynamicParams = true
 
-export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
+export default async function LeadDetailPage({ params }: { params: { id: string } }) {
+  const { id } = params
   const supabase = await createClient()
 
   const {

@@ -4,9 +4,10 @@ import { InstanceDetails } from "@/components/instance-details"
 import { notFound } from "next/navigation"
 
 export const dynamic = "force-dynamic"
+export const dynamicParams = true
 
-export default async function InstanceDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
+export default async function InstanceDetailPage({ params }: { params: { id: string } }) {
+  const { id } = params
   const supabase = await createClient()
 
   const {

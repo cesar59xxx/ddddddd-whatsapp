@@ -1,7 +1,6 @@
 export const BACKEND_CONFIG = {
-  // Em produção na Vercel, usar a URL do Railway
-  // Em desenvolvimento local, usar localhost
-  baseUrl: process.env.NEXT_PUBLIC_RAILWAY_BACKEND_URL || "http://localhost:3001",
+  // Railway production URL: https://ddddddd-whatsapp-production.up.railway.app
+  baseUrl: process.env.NEXT_PUBLIC_RAILWAY_BACKEND_URL || "https://ddddddd-whatsapp-production.up.railway.app",
   apiKey: process.env.BACKEND_API_KEY || "",
   endpoints: {
     whatsapp: {
