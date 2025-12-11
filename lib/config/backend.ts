@@ -1,7 +1,8 @@
 export const BACKEND_CONFIG = {
   // Em produção na Vercel, usar a URL do Railway
   // Em desenvolvimento local, usar localhost
-  baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001",
+  baseUrl: process.env.NEXT_PUBLIC_RAILWAY_BACKEND_URL || "http://localhost:3001",
+  apiKey: process.env.BACKEND_API_KEY || "",
   endpoints: {
     whatsapp: {
       connect: (instanceId: string) => `/api/whatsapp/instances/${instanceId}/connect`,

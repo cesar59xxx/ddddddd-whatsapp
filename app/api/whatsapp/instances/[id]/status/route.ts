@@ -34,6 +34,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const backendResponse = await fetch(backendUrl, {
       headers: {
         "Content-Type": "application/json",
+        "X-API-Key": BACKEND_CONFIG.apiKey,
       },
     })
 

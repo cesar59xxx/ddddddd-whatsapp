@@ -3,6 +3,7 @@ import cors from "cors"
 import dotenv from "dotenv"
 import { whatsappRouter } from "./routes/whatsapp"
 import { webhookRouter } from "./routes/webhook"
+import { authenticateApiKey } from "./middleware/auth"
 
 dotenv.config()
 
@@ -24,7 +25,7 @@ app.get("/health", (req, res) => {
 })
 
 // Routes
-app.use("/api/whatsapp", whatsappRouter)
+app.use("/api/whatsapp", authenticateApiKey, whatsappRouter)
 app.use("/api/webhook", webhookRouter)
 
 app.listen(PORT, () => {

@@ -42,6 +42,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-API-Key": BACKEND_CONFIG.apiKey,
       },
       body: JSON.stringify({ to, message, mediaUrl, caption }),
     })

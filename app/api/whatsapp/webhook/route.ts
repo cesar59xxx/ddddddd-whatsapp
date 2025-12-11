@@ -1,6 +1,5 @@
 import { createServerClient } from "@supabase/ssr"
 import { chatbotService } from "@/lib/services/chatbot"
-import { whatsappWebService } from "@/lib/services/whatsapp-web"
 import { NextResponse } from "next/server"
 
 export async function POST(request: Request) {
@@ -8,19 +7,25 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { instanceId, apiKey, from, message, type = "text" } = body
 
+    console.log("[v0] Webhook received:", { instanceId, from, message })
+
     if (!instanceId || !apiKey) {
       return NextResponse.json({ error: "Missing instanceId or apiKey" }, { status: 400 })
     }
 
     // Create Supabase client with service role for webhook processing
-    const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-      cookies: {
-        getAll() {
-          return []
+    const supabase = createServerClient(
+      "https://kojduqsmxipoayecuvsi.supabase.co",
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvamR1cXNteGlwb2F5ZWN1dnNpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTQ3ODg2NSwiZXhwIjoyMDgxMDU0ODY1fQ.dEgoQAHl78BbrMRucng075-kx4b7ErWWIhh-WySX8ig",
+      {
+        cookies: {
+          getAll() {
+            return []
+          },
+          setAll() {},
         },
-        setAll() {},
       },
-    })
+    )
 
     // Verify API key
     const { data: instance, error: instanceError } = await supabase
@@ -31,6 +36,7 @@ export async function POST(request: Request) {
       .single()
 
     if (instanceError || !instance) {
+      console.log("[v0] Invalid instance or API key")
       return NextResponse.json({ error: "Invalid instance or API key" }, { status: 401 })
     }
 
@@ -55,7 +61,7 @@ export async function POST(request: Request) {
         .single()
 
       if (convError) {
-        console.error("[WhatsApp] Error creating conversation:", convError)
+        console.error("[v0] Error creating conversation:", convError)
         return NextResponse.json({ error: "Failed to create conversation" }, { status: 500 })
       }
 
@@ -102,8 +108,18 @@ export async function POST(request: Request) {
           leadId: lead?.id,
         })
 
-        // Send bot response
-        await whatsappWebService.sendMessage(instanceId, from, response.message)
+        const railwayUrl = process.env.RAILWAY_BACKEND_URL || "http://localhost:3001"
+        await fetch(`${railwayUrl}/api/whatsapp/${instanceId}/send`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": process.env.RAILWAY_API_KEY || "",
+          },
+          body: JSON.stringify({
+            to: from,
+            message: response.message,
+          }),
+        })
 
         // Save bot response
         await supabase.from("messages").insert({
@@ -123,9 +139,10 @@ export async function POST(request: Request) {
       event_data: { from, type },
     })
 
+    console.log("[v0] Webhook processed successfully")
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("[WhatsApp] Webhook error:", error)
+    console.error("[v0] Webhook error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
