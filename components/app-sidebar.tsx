@@ -13,7 +13,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import { LayoutDashboard, MessageSquare, Bot, Users, Settings, LogOut } from "lucide-react"
+import { LayoutDashboard, MessageSquare, Users, Settings, LogOut } from "lucide-react"
 import Link from "next/link"
 import type { User } from "@supabase/supabase-js"
 
@@ -40,11 +40,6 @@ export function AppSidebar({ user }: AppSidebarProps) {
       title: "Instâncias",
       icon: MessageSquare,
       href: "/instances",
-    },
-    {
-      title: "Chatbots",
-      icon: Bot,
-      href: "/chatbots",
     },
     {
       title: "Leads",
